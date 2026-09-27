@@ -22,7 +22,9 @@ omac_profile <harness> <name> <plain|omac> [--] [args...]
   (upstream v2 flag, not a patch: private per-run server on an OS-assigned
   port that dies with the client, so the profile never collides with the
   shared service on 49374). Skipped if the user passes
-  `--server`/`--standalone` themselves.
+  `--server`/`--standalone` themselves. Only the TUI, `api`, `auth` and
+  `acp` handlers accept the flag; other opencode subcommands must run in
+  omac mode (see debugging).
 - `omac` runs through the omac sandbox. After the wrapper's `--`, args are
   harness args (`omac start <harness> -- <args>`). Without `--`: no args =
   TUI, a leading `-flag` goes to `omac start`, a leading word in
@@ -110,6 +112,18 @@ Symptom → cause:
 - `omac_profile: unsupported harness` → add a row in `lib/profile.sh`.
 - Plain wrapper hits `EADDRINUSE` / ~15s incumbent timeout → something
   else took 49374, i.e. `--standalone` was skipped.
+- `Unrecognized flag: --standalone in command opencode mcp` (exit 1), or
+  a ~60s hang retrying 49374 in plain mode → that subcommand does not
+  accept the flag, and without it the CLI keeps respawning
+  `serve --service` on the fixed default port. Run the subcommand in
+  omac mode (pinned port); the retries land in
+  `<profile>/data/opencode/log/opencode.log`.
+- `mcp list` reports `No MCP servers configured` while the profile's
+  `opencode.json` defines servers → observed v2.0.18 behavior on a
+  freshly started service: the config is loaded (verify with
+  `omac_profile opencode <name> omac -- debug config`, which shows the
+  parsed `mcp` block) but the list view reads a live registry that stays
+  empty until a session starts. Use `debug config` as the check.
 - claude mode exits 127 → claude CLI not installed.
 
 Verify:
