@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Profile wrapper: omac_profile <harness> <name> <plain|omac> [--] [args...]
+# Profile wrapper: omac_profile <harness> <name> <plain|omac|cleanup> [--] [args...]
 
 here="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
 # shellcheck source=../lib/profile.sh
@@ -8,20 +8,22 @@ here="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
 
 usage() {
   cat >&2 <<'EOF'
-usage: omac_profile <harness> <name> <plain|omac> [--] [args...]
+usage: omac_profile <harness> <name> <plain|omac|cleanup> [--] [args...]
 
   <harness>  opencode | claude
   <name>     profile name; one environment per name
   plain      run the harness directly, no sandbox
   omac       run through the omac sandbox
+  cleanup    delete the profile: remove its whole directory
 
-After --, args go to the harness (both modes). In omac mode a leading
-non-dash word is an omac subcommand instead (continue, resume, serve, ...).
+After --, args go to the harness (plain and omac mode). In omac mode a
+leading non-dash word is an omac subcommand instead (continue, resume, ...).
 
 examples:
   omac_profile opencode work omac                     # sandboxed TUI
   omac_profile opencode work omac -- api get /api/info
   omac_profile opencode work plain -- --version       # private per-run server
+  omac_profile opencode work cleanup                  # delete profile 'work'
   omac_profile claude work omac continue
 EOF
   exit 2
@@ -39,11 +41,31 @@ sep=0
 }
 
 case "$mode" in
-  plain | omac) ;;
+  plain | omac | cleanup) ;;
   *) usage ;;
 esac
+[ "$mode" != "cleanup" ] || [ $# -eq 0 ] || usage
 
 root="$(profile_root "$harness" "$name")"
+
+if [ "$mode" = "cleanup" ]; then
+  # rm -rf guard: only ever remove a root we just built, under the two known parents.
+  case "$root" in
+    "$HOME"/.opencode/profiles/* | "$HOME"/.claude-profiles/*) ;;
+    *)
+      echo "omac_profile: refusing to remove '$root' (not a profile dir)" >&2
+      exit 1
+      ;;
+  esac
+  if [ -e "$root" ] || [ -L "$root" ]; then
+    rm -rf -- "$root"
+    echo "removed profile '$name' ($root)"
+  else
+    echo "profile '$name' does not exist (nothing removed)"
+  fi
+  exit 0
+fi
+
 profile_ensure "$harness" "$root"
 profile_use "$harness" "$root"
 

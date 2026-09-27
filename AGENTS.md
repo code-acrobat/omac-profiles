@@ -15,7 +15,7 @@ One generic `omac_profile` script serves every harness; there are no
 per-harness wrappers:
 
 ```
-omac_profile <harness> <name> <plain|omac> [--] [args...]
+omac_profile <harness> <name> <plain|omac|cleanup> [--] [args...]
 ```
 
 - `plain` runs the harness directly. opencode gets `--standalone` prepended
@@ -29,6 +29,12 @@ omac_profile <harness> <name> <plain|omac> [--] [args...]
   harness args (`omac start <harness> -- <args>`). Without `--`: no args =
   TUI, a leading `-flag` goes to `omac start`, a leading word in
   {start, continue, resume, serve} is an omac subcommand.
+- `cleanup` removes the whole profile directory (`rm -rf` on the
+  constructed root, guarded to `~/.opencode/profiles/*` and
+  `~/.claude-profiles/*`, extra args rejected). Idempotent: exit 0 with
+  a message when nothing exists. Built for throwaway profiles: nuke the
+  blast radius of a compromised session. Stop sessions first; it never
+  kills processes.
 
 ## Where the omac hotfix comes in
 

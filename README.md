@@ -20,7 +20,7 @@ built with the service-port hotfix (TNG/oh-my-agentic-coder#329).
 ## Usage
 
 ```
-omac_profile <harness> <name> <plain|omac> [--] [args...]
+omac_profile <harness> <name> <plain|omac|cleanup> [--] [args...]
 ```
 
 Two variants to start with; both open the profile `work`:
@@ -48,6 +48,22 @@ omac_profile opencode work omac -- api get /api/info
 omac_profile opencode work plain -- --version       # v2.x, private server
 omac_profile opencode work omac continue            # resume last session
 ```
+
+## Throwaway profiles
+
+A profile is the blast radius of a session: config, provider
+credentials, sessions, skills, approvals and the audit trail all live
+in its directory. When something went wrong in a session (a
+prompt-injected agent, a leaked credential), delete the profile and
+start clean:
+
+```sh
+omac_profile opencode work cleanup    # removes ~/.opencode/profiles/work entirely
+```
+
+Stop the session first; cleanup only removes files, never running
+processes. Running it twice is fine: the second run reports that there
+is nothing to remove and exits 0.
 
 ## What a profile keeps where
 
