@@ -114,13 +114,28 @@ server:
 ```json
 {
   "mcp": {
-    "servers": {
-      "context7": { "type": "remote", "url": "https://mcp.context7.com/mcp" },
-      "playwright": { "type": "local", "command": ["npx", "-y", "@playwright/mcp@latest"] }
-    }
+    "context7": { "type": "remote", "url": "https://mcp.context7.com/mcp" },
+    "playwright": { "type": "local", "command": ["npx", "-y", "@playwright/mcp@latest"] }
   }
 }
 ```
+
+**Local servers inside the sandbox:** `npx -y <pkg>` servers download
+from npm's registry at spawn time, through omac's filtering proxy. Older
+toolchains don't authenticate to that proxy (verified failing: npm 9 on
+node 18 — the server dies with `Connection closed` or `407`), so vendor
+the package into the profile instead:
+
+```sh
+prefix=~/.opencode/profiles/work/data/mcp/playwright
+mkdir -p "$prefix" && npm install --prefix "$prefix" @playwright/mcp
+```
+
+Then point the `command` at the installed entry (check `bin` in the
+package's `package.json`):
+`"command": ["node", "<prefix>/node_modules/<pkg>/<entry>"]`.
+The profile data dir is granted to the sandbox, needs no network at
+spawn, and is removed by `cleanup`.
 
 opencode combines config from these places:
 

@@ -130,6 +130,17 @@ Symptom → cause:
   `omac_profile opencode <name> omac -- debug config`, which shows the
   parsed `mcp` block) but the list view reads a live registry that stays
   empty until a session starts. Use `debug config` as the check.
+- sandboxed local MCP server dies with `mcp connect failed ...
+  "Connection closed"` or `407 Proxy Authentication Required` → an
+  `npx -y <pkg>` server tries to download at spawn time; on this stack
+  (npm 9 / node 18) npm does not authenticate to omac's filtering proxy
+  and node 18 has no `NODE_USE_ENV_PROXY`, so the spawn always fails.
+  Vendor the package into `<profile>/data/mcp/` and point `opencode.json`
+  at `node <path>` (README, "Local servers inside the sandbox"). Grants
+  and network policy live in `~/.config/omac/sandbox-profiles/default.json`
+  — a hardcoded, machine-global path that does NOT follow the profile's
+  `XDG_CONFIG_HOME` (the profile's own copy is inert); `~/.npm` read +
+  `allow_domain: registry.npmjs.org` there help npm-family tooling.
 - claude mode exits 127 → claude CLI not installed.
 
 Verify:
