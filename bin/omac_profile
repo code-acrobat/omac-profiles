@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Profile wrapper: omac_profile <harness> <name> <plain|omac> [--] [args...]
+
+here="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
+# shellcheck source=../lib/profile.sh
+. "$here/../lib/profile.sh"
+
+usage() {
+  cat >&2 <<'EOF'
+usage: omac_profile <harness> <name> <plain|omac> [--] [args...]
+
+  <harness>  opencode | claude
+  <name>     profile name; one environment per name
+  plain      run the harness directly, no sandbox
+  omac       run through the omac sandbox
+
+After --, args go to the harness (both modes). In omac mode a leading
+non-dash word is an omac subcommand instead (continue, resume, serve, ...).
+
+examples:
+  omac_profile opencode work omac                     # sandboxed TUI
+  omac_profile opencode work omac -- api get /api/info
+  omac_profile opencode work plain -- --version       # private per-run server
+  omac_profile claude work omac continue
+EOF
+  exit 2
+}
+
+[ $# -ge 3 ] || usage
+harness="$(profile_harness "$1")"
+name="$2"
+mode="$3"
+shift 3
+sep=0
+[ "${1:-}" = "--" ] && {
+  shift
+  sep=1
+}
+
+case "$mode" in
+  plain | omac) ;;
+  *) usage ;;
+esac
+
+root="$(profile_root "$harness" "$name")"
+profile_ensure "$harness" "$root"
+profile_use "$harness" "$root"
+
+if [ "$mode" = "plain" ]; then
+  if [ "$harness" = "opencode" ]; then
+    # --standalone: upstream flag, private per-run server on an OS-assigned
+    # port, so the profile never collides with the shared service on 49374.
+    add_standalone=1
+    for arg in "$@"; do
+      case "$arg" in
+        --) break ;;
+        --server | --standalone) add_standalone=0 ;;
+      esac
+    done
+    if [ "$add_standalone" -eq 1 ]; then exec opencode --standalone "$@"; else exec opencode "$@"; fi
+  else
+    exec claude "$@"
+  fi
+fi
+
+# omac mode: `--` args are harness args after `omac start <harness>`;
+# otherwise a leading non-dash word is an omac subcommand.
+if [ "$sep" -eq 1 ]; then
+  if [ $# -gt 0 ]; then exec omac start "$harness" -- "$@"; else exec omac start "$harness"; fi
+fi
+if [ $# -eq 0 ]; then
+  exec omac start "$harness"
+elif [ "${1#-}" != "$1" ]; then
+  exec omac start "$harness" "$@"
+else
+  case "$1" in
+    start | continue | resume | serve)
+      sub="$1"
+      shift
+      exec omac "$sub" "$harness" "$@"
+      ;;
+    *)
+      exec omac "$@"
+      ;;
+  esac
+fi
