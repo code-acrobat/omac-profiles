@@ -44,6 +44,7 @@ profile_use() {
       export XDG_CONFIG_HOME="$root/config" # opencode config + omac registry/approvals
       export XDG_DATA_HOME="$root/data"     # opencode.db: sessions, provider credentials
       export XDG_STATE_HOME="$root/state"   # service registration, locks, audit trail
+      export npm_config_cache="$root/data/npm-cache" # sandbox-writable; keeps host cache untouched
       ;;
     claude-code)
       export CLAUDE_CONFIG_DIR="$root/config" # claude config, credentials, sessions
@@ -63,4 +64,40 @@ profile_ensure() {
       ;;
   esac
   # Extension point: template seeding (opencode.json, plugins, MCP servers), cache isolation.
+}
+
+# Seed a profile from the host's setup (host paths, so run BEFORE
+# profile_use). Existing profile files win; omac's approvals/registry stay
+# profile-owned and re-provision on the first run.
+profile_sync() {
+  local harness="$1" root="$2"
+  # rsync preferred: same no-clobber semantics as cp -n, without its warning.
+  local copy=(rsync -a --ignore-existing)
+  command -v rsync >/dev/null 2>&1 || copy=(cp -an)
+  case "$harness" in
+    opencode)
+      local host_cfg="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+      if [ -d "$host_cfg" ]; then
+        mkdir -p "$root/config/opencode"
+        "${copy[@]}" "$host_cfg/." "$root/config/opencode/" 2> >(grep -vF "behavior of -n is non-portable" >&2)
+        # A copied registration would point the profile at the host service.
+        rm -f "$root/config/opencode/service.json"
+        echo "omac_profile: seeded config from $host_cfg (service.json left out)"
+      else
+        echo "omac_profile: no host config at $host_cfg, nothing seeded"
+      fi
+      local host_npm="${npm_config_cache:-$HOME/.npm}"
+      if [ -d "$host_npm" ]; then
+        mkdir -p "$root/data/npm-cache"
+        "${copy[@]}" "$host_npm/." "$root/data/npm-cache/" 2> >(grep -vF "behavior of -n is non-portable" >&2)
+        echo "omac_profile: seeded npm cache from $host_npm ($(du -sh "$root/data/npm-cache" | cut -f1) total)"
+      else
+        echo "omac_profile: no host npm cache at $host_npm, nothing seeded"
+      fi
+      ;;
+    *)
+      echo "omac_profile: sync not supported for harness '$harness' (add a row in lib/profile.sh)" >&2
+      return 1
+      ;;
+  esac
 }

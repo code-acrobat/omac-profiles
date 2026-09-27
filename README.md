@@ -20,7 +20,7 @@ built with the service-port hotfix (TNG/oh-my-agentic-coder#329).
 ## Usage
 
 ```
-omac_profile <harness> <name> <plain|omac|cleanup> [--] [args...]
+omac_profile <harness> <name> <plain|omac|cleanup|sync> [--] [args...]
 ```
 
 Two variants to start with; both open the profile `work`:
@@ -49,6 +49,27 @@ omac_profile opencode work plain -- --version       # v2.x, private server
 omac_profile opencode work omac continue            # resume last session
 ```
 
+## Seed from your host setup
+
+`sync` fills a profile from what is already set up on the host. It
+never overwrites a file that exists in the profile, so re-running it
+only adds what is missing (`rsync` when available, plain `cp` otherwise):
+
+```sh
+omac_profile opencode work sync
+```
+
+- your host opencode config (`~/.config/opencode/`) into
+  `<profile>/config/opencode/`: `opencode.json`, `auth.json`, plugins,
+  themes. `service.json` is left out so the profile never points at the
+  host's service.
+- your host npm cache (`~/.npm/`) into `<profile>/data/npm-cache/`: a
+  warm copy that is the profile's own: the sandbox may poison it, and
+  `cleanup` throws it away.
+
+omac's own layer (approvals, registry) is not copied: every profile
+approves for itself and gets the built-in skills on its first run.
+
 ## Throwaway profiles
 
 A profile is the blast radius of a session: config, provider
@@ -69,7 +90,7 @@ is nothing to remove and exits 0.
 
 | harness  | root                       | branched by                                          |
 |----------|----------------------------|------------------------------------------------------|
-| opencode | `~/.opencode/profiles/<n>` | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` |
+| opencode | `~/.opencode/profiles/<n>` | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, `npm_config_cache` |
 
 The opencode root sits under `~/.opencode/` on purpose: omac grants that
 prefix to the opencode sandbox, so profile dirs are sandbox-visible
@@ -86,6 +107,7 @@ Contents of a profile, for `work` at `~/.opencode/profiles/work/`:
 | `config/omac/` | omac registry + approvals for this profile |
 | `data/opencode/opencode.db` | sessions and provider credentials (`opencode auth login` lands here) |
 | `data/opencode/log/` | opencode logs |
+| `data/npm-cache/` | npm cache (exported as `npm_config_cache`, seeded by `sync`) |
 | `state/opencode/` | service registration |
 | `state/omac/audit/audit.jsonl` | omac audit trail for this profile |
 
@@ -108,34 +130,41 @@ For orientation, the non-profile (default) locations on a Linux box:
 | service registration | `~/.local/state/opencode/` |
 | omac approvals + registry | `~/.config/omac/` |
 
-An MCP example in opencode's native schema, one remote and one local
-server:
+An MCP example in opencode's native schema — prefer `remote` (HTTP)
+servers, which run outside the sandbox:
 
 ```json
 {
   "mcp": {
     "context7": { "type": "remote", "url": "https://mcp.context7.com/mcp" },
-    "playwright": { "type": "local", "command": ["npx", "-y", "@playwright/mcp@latest"] }
+    "memory": { "type": "remote", "url": "http://127.0.0.1:3719/mcp" }
   }
 }
 ```
 
-**Local servers inside the sandbox:** `npx -y <pkg>` servers download
-from npm's registry at spawn time, through omac's filtering proxy. Older
-toolchains don't authenticate to that proxy (verified failing: npm 9 on
-node 18 — the server dies with `Connection closed` or `407`), so vendor
-the package into the profile instead:
+**Prefer HTTP (remote) MCP servers.** A `local` server is spawned inside
+the sandbox and has to download itself at spawn time, which fails through
+omac's filtering proxy on older toolchains (verified: npm 9 / node 18 →
+`407` / `Connection closed`); its state also grows inside shared dirs.
+Run the MCP server on the host instead, where it can hold your secrets,
+and let the profile talk to its loopback URL:
 
-```sh
-prefix=~/.opencode/profiles/work/data/mcp/playwright
-mkdir -p "$prefix" && npm install --prefix "$prefix" @playwright/mcp
-```
+1. Host: start the MCP server on `127.0.0.1:<port>` (stdio servers can
+   be wrapped with any HTTP bridge).
+2. Profile: `"type": "remote", "url": "http://127.0.0.1:<port>/mcp"`.
+3. Sandbox policy (`~/.config/omac/sandbox-profiles/default.json`,
+   machine-global): add the port to `network.open_port`. Ad-hoc connects
+   can also be approved through the network prompt.
 
-Then point the `command` at the installed entry (check `bin` in the
-package's `package.json`):
-`"command": ["node", "<prefix>/node_modules/<pkg>/<entry>"]`.
-The profile data dir is granted to the sandbox, needs no network at
-spawn, and is removed by `cleanup`.
+Each profile exports its own npm cache
+(`npm_config_cache=<profile>/data/npm-cache`), so npm-family tooling in
+the sandbox never touches the host's `~/.npm`: a shared cache can be
+poisoned, and the profile-local one is thrown away with `cleanup`.
+
+There is deliberately no install skill for the local→HTTP MCP
+conversion: it would handle your MCP tokens inside a model session
+(leak surface). Do the steps above by hand, or have your local model
+run them against this section as the recipe.
 
 opencode combines config from these places:
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Profile wrapper: omac_profile <harness> <name> <plain|omac|cleanup> [--] [args...]
+# Profile wrapper: omac_profile <harness> <name> <plain|omac|cleanup|sync> [--] [args...]
 
 here="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
 # shellcheck source=../lib/profile.sh
@@ -8,13 +8,14 @@ here="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
 
 usage() {
   cat >&2 <<'EOF'
-usage: omac_profile <harness> <name> <plain|omac|cleanup> [--] [args...]
+usage: omac_profile <harness> <name> <plain|omac|cleanup|sync> [--] [args...]
 
   <harness>  opencode | claude
   <name>     profile name; one environment per name
   plain      run the harness directly, no sandbox
   omac       run through the omac sandbox
   cleanup    delete the profile: remove its whole directory
+  sync       seed the profile from the host (config, plugins, npm cache)
 
 After --, args go to the harness (plain and omac mode). In omac mode a
 leading non-dash word is an omac subcommand instead (continue, resume, ...).
@@ -24,6 +25,7 @@ examples:
   omac_profile opencode work omac -- api get /api/info
   omac_profile opencode work plain -- --version       # private per-run server
   omac_profile opencode work cleanup                  # delete profile 'work'
+  omac_profile opencode work sync                    # seed profile from host
   omac_profile claude work omac continue
 EOF
   exit 2
@@ -41,10 +43,10 @@ sep=0
 }
 
 case "$mode" in
-  plain | omac | cleanup) ;;
+  plain | omac) ;;
+  cleanup | sync) [ $# -eq 0 ] || usage ;;
   *) usage ;;
 esac
-[ "$mode" != "cleanup" ] || [ $# -eq 0 ] || usage
 
 root="$(profile_root "$harness" "$name")"
 
@@ -67,6 +69,13 @@ if [ "$mode" = "cleanup" ]; then
 fi
 
 profile_ensure "$harness" "$root"
+
+if [ "$mode" = "sync" ]; then
+  # Before profile_use: sync must read the HOST paths, not the profile's.
+  profile_sync "$harness" "$root"
+  exit 0
+fi
+
 profile_use "$harness" "$root"
 
 if [ "$mode" = "plain" ]; then

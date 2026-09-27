@@ -15,7 +15,7 @@ One generic `omac_profile` script serves every harness; there are no
 per-harness wrappers:
 
 ```
-omac_profile <harness> <name> <plain|omac|cleanup> [--] [args...]
+omac_profile <harness> <name> <plain|omac|cleanup|sync> [--] [args...]
 ```
 
 - `plain` runs the harness directly. opencode gets `--standalone` prepended
@@ -35,6 +35,14 @@ omac_profile <harness> <name> <plain|omac|cleanup> [--] [args...]
   a message when nothing exists. Built for throwaway profiles: nuke the
   blast radius of a compromised session. Stop sessions first; it never
   kills processes.
+- `sync` seeds a profile from the host: the host opencode config dir
+  (`${XDG_CONFIG_HOME:-~/.config}/opencode`) into
+  `<profile>/config/opencode/` (minus `service.json`) and `~/.npm` into
+  `<profile>/data/npm-cache/`, no-overwrite copies (`rsync` when
+  available, `cp -n` fallback) so profile files win and
+  re-running only fills gaps. Runs before `profile_use` (it must read
+  host paths). The omac layer is never seeded. claude: not implemented
+  (clear error; extension point in `profile_sync`).
 
 ## Where the omac hotfix comes in
 
@@ -59,7 +67,7 @@ will follow as one table row each. Everything harness-specific lives in
 
 | harness     | root                         | env exports (`profile_use`)            | plain prelude    |
 |-------------|------------------------------|----------------------------------------|------------------|
-| opencode    | `~/.opencode/profiles/<n>`   | XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STATE_HOME | `--standalone` |
+| opencode    | `~/.opencode/profiles/<n>`   | XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STATE_HOME, npm_config_cache | `--standalone` |
 | claude-code | `~/.claude-profiles/<n>`     | CLAUDE_CONFIG_DIR                      | (none)           |
 
 Adding a harness = one row each in `profile_harness` (alias
@@ -96,10 +104,20 @@ these (`HomeEnv` in omac's harness descriptors).
    `<profile>/state/omac/audit/audit.jsonl` instead of the central
    `~/.local/state/omac/audit/`. Per-profile trails are intentional under
    branch-off; know where to look when reviewing.
-6. `XDG_CACHE_HOME` is not redirected: caches are not secret and sharing
-   avoids re-downloads. Extension point for cache isolation and for
-   opencode.json/plugin/MCP seeding: `profile_ensure()` in
-   `lib/profile.sh`.
+6. `XDG_CACHE_HOME` is not redirected: general caches are not secret and
+   sharing avoids re-downloads. The npm cache is the exception, see 7.
+   Extension point for cache isolation and for opencode.json/plugin/MCP
+   seeding: `profile_ensure()` in `lib/profile.sh`.
+7. Per-profile npm cache: `profile_use` exports
+   `npm_config_cache=<profile>/data/npm-cache`, forwarded into the
+   sandbox by the machine policy's `npm_config_*` allowlist entry. npm
+   tarballs get executed, so a shared cache is a poisoning vector; the
+   host `~/.npm` is deliberately not granted at all. Trade-off: each
+   profile downloads its packages once.
+8. No shipped skill for the MCP local→HTTP conversion: it would handle
+   MCP tokens inside a model session (leak surface) and would need
+   per-profile registration machinery. The recipe stays in the README;
+   the repo stays scripts + docs.
 
 ## Debugging
 
@@ -131,16 +149,18 @@ Symptom → cause:
   parsed `mcp` block) but the list view reads a live registry that stays
   empty until a session starts. Use `debug config` as the check.
 - sandboxed local MCP server dies with `mcp connect failed ...
-  "Connection closed"` or `407 Proxy Authentication Required` → an
-  `npx -y <pkg>` server tries to download at spawn time; on this stack
-  (npm 9 / node 18) npm does not authenticate to omac's filtering proxy
-  and node 18 has no `NODE_USE_ENV_PROXY`, so the spawn always fails.
-  Vendor the package into `<profile>/data/mcp/` and point `opencode.json`
-  at `node <path>` (README, "Local servers inside the sandbox"). Grants
-  and network policy live in `~/.config/omac/sandbox-profiles/default.json`
-  — a hardcoded, machine-global path that does NOT follow the profile's
-  `XDG_CONFIG_HOME` (the profile's own copy is inert); `~/.npm` read +
-  `allow_domain: registry.npmjs.org` there help npm-family tooling.
+  "Connection closed"` or `407 Proxy Authentication Required` → a
+  `local` server spawned with `npx -y <pkg>` tries to download at spawn
+  time; on this stack (npm 9 / node 18) npm does not authenticate to
+  omac's filtering proxy and node 18 has no `NODE_USE_ENV_PROXY`, so the
+  spawn always fails. Use a host-side HTTP MCP instead (README, "Prefer
+  HTTP"): the host process holds the secrets, only a loopback port enters
+  the sandbox. Grants and network policy live in
+  `~/.config/omac/sandbox-profiles/default.json` — a hardcoded,
+  machine-global path that does NOT follow the profile's
+  `XDG_CONFIG_HOME` (the profile's own copy is inert);
+  `allow_domain: registry.npmjs.org` there serves agent-side fetches
+  (curl/git), npm itself still gets 407.
 - claude mode exits 127 → claude CLI not installed.
 
 Verify:
