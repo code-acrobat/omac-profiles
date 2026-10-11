@@ -108,12 +108,18 @@ these (`HomeEnv` in omac's harness descriptors).
    opencode.json/plugin/MCP seeding: `profile_ensure()` in
    `lib/profile.sh`.
 7. Tool caches (npm, Go, pip, cargo, XDG) belong to omac, one source of
-   truth: omac injects every cache variable on omac-mode runs, scoped by
-   `--cache-scope global|config|workdir` or thrown away per launch with
-   `--ephemeral-cache` (README, "Caches"). The wrapper must not export
-   cache variables of its own: it would duplicate a dozen env spellings
-   that omac already owns and shadow omac's injection inside the
-   sandbox.
+   truth: omac injects every cache variable on omac-mode runs and scopes
+   the cache directory `global|config|workdir` (default `workdir`, i.e.
+   per project) or throws it away per launch with `--ephemeral-cache`
+   (README, "Caches"). The wrapper must not export cache variables of
+   its own: it would duplicate a dozen env spellings that omac already
+   owns and shadow omac's injection inside the sandbox. Note: `config`
+   scope keys on the launcher config path, read from the host's
+   `~/.config/omac/config.yaml` (home-based, ignores the profile's
+   XDG_CONFIG_HOME), so it is shared by every profile — never set it
+   expecting per-profile caches. The `workdir` default already
+   separates work and personal as long as they work in different
+   directories.
 8. No shipped skill for the MCP local→HTTP conversion: it would handle
    MCP tokens inside a model session (leak surface) and would need
    per-profile registration machinery. The recipe stays in the README;

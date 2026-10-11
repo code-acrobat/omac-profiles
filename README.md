@@ -144,39 +144,39 @@ profile. omac owns them as the single source of truth: a wrapper would
 have to track every cache variable of every toolchain, always one tool
 release behind omac, and would shadow the variables omac injects.
 
-What omac does:
+What omac does, always on in every omac-mode session:
 
-- Every omac-mode run points `NPM_CONFIG_CACHE`, `GOCACHE`,
-  `GOMODCACHE`, `PIP_CACHE_DIR`, `CARGO_HOME` and `XDG_CACHE_HOME` at
-  one directory per cache scope under `~/.cache/omac/`; the host's own
-  caches are never written from the sandbox.
-- The scope decides who shares a cache: `--cache-scope global`,
-  `config` (per launcher-config file) or `workdir` (per project).
-  `--ephemeral-cache` makes it throwaway per launch,
-  `omac cache clear` drops the active scope.
+- `NPM_CONFIG_CACHE`, `GOCACHE`, `GOMODCACHE`, `PIP_CACHE_DIR`,
+  `CARGO_HOME` and `XDG_CACHE_HOME` are pointed at one directory per
+  cache scope under `~/.cache/omac/`; the host's own caches are never
+  written from the sandbox.
+- The default scope is already `workdir`: every project gets its own
+  cache. A work profile in `~/work/...` and a personal profile in
+  `~/proj/...` therefore never share an npm (or Go, pip, cargo) cache,
+  with zero configuration:
 
-Example: work and personal sessions using separate npm caches, from
-plain omac, no cache handling in the wrapper:
+  ```sh
+  cd ~/work/repo && omac start opencode        # this project's cache
+  cd ~/proj/photo-tool && omac start opencode  # another project, another cache
+  ```
 
-```sh
-# work: every session in this repo shares one npm cache
-cd ~/work/repo && omac start opencode --cache-scope workdir
+Things to know:
 
-# personal: this project gets its own cache, separate from work's
-cd ~/proj/photo-tool && omac start opencode --cache-scope workdir
-```
+- Two profiles working in the **same project** share that project's
+  cache: the scope keys on the directory, not the profile. Use separate
+  checkouts if that matters.
+- Caches live under `~/.cache/omac/`, outside the profile root, so
+  `cleanup` does not delete them; `omac cache clear` in the project
+  removes that project's cache.
+- `--cache-scope config` keys on the host launcher config file, which
+  all profiles share; it does not produce per-profile caches.
+  `--cache-scope global` shares one cache everywhere; both are opt-in
+  sharing, not isolation. `--ephemeral-cache` throws the cache away at
+  session end.
 
-To keep the scope without the flag, set it per project in
-`<project>/.opencode/oh-my-agentic-coder.yaml`:
-
-```yaml
-cache:
-  scope: workdir
-```
-
-If cache separation is your only concern, this is all you need;
-profiles add the credential and blast-radius layer on top. Note that
-plain mode (no sandbox) runs with your host environment as-is, so
+If cache separation is your only concern, the default already gives it
+to you; profiles add the credential and blast-radius layer on top. Note
+that plain mode (no sandbox) runs with your host environment as-is, so
 omac's cache redirects do not apply there.
 
 ## Tuning config (MCP, plugins, model)
