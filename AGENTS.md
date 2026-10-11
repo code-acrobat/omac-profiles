@@ -44,19 +44,18 @@ omac_profile <harness> <name> <plain|omac|cleanup|sync> [--] [args...]
   host paths). The omac layer is never seeded. claude: not implemented
   (clear error; extension point in `profile_sync`).
 
-## Where the omac hotfix comes in
+## How the opencode v2 service port is handled
 
-- Issue TNG/oh-my-agentic-coder#328, fix PR #329 ("pin opencode v2
-  background service to a granted port"), installed locally as
-  `~/.local/bin/omac` (0.1.0-dev from the fix branch).
-- Without it, the sandboxed v2 service tries to bind 49374 inside
-  Landlock (Linux MAC sandbox) and dies with `EACCES`, exit 1.
-- The hotfix picks a free loopback port P, seeds a private opencode
-  config with `{"port": P}`, sets `OPENCODE_CONFIG_DIR` and
-  `XDG_STATE_HOME` to sandbox-tmp dirs, and grants `--open-port P`.
+- omac ≥ v0.10.0 pins the sandboxed opencode v2 service to a granted
+  loopback port: it picks a free port P, seeds a private opencode config
+  with `{"port": P}`, sets `OPENCODE_CONFIG_DIR` and `XDG_STATE_HOME` to
+  sandbox-tmp dirs, and grants `--open-port P`. Installed locally as
+  `~/.local/bin/omac` (0.10.0). Older omac versions tried to bind the
+  default port 49374 inside Landlock (Linux MAC sandbox) and died with
+  `EACCES`, exit 1.
 - The wrapper only supplies the profile XDG dirs. It must never set
   `OPENCODE_CONFIG_DIR` itself — inside the sandbox, the pin owns it.
-- claude needs no hotfix: no background service (`ServerLaunch: nil`),
+- claude needs no pin: no background service (`ServerLaunch: nil`),
   and omac's `HomeEnv: CLAUDE_CONFIG_DIR` re-grants the sandbox path.
 
 ## The harness table
@@ -113,7 +112,12 @@ these (`HomeEnv` in omac's harness descriptors).
    sandbox by the machine policy's `npm_config_*` allowlist entry. npm
    tarballs get executed, so a shared cache is a poisoning vector; the
    host `~/.npm` is deliberately not granted at all. Trade-off: each
-   profile downloads its packages once.
+   profile downloads its packages once. Note: omac ≥ 0.10.0 additionally
+   injects `NPM_CONFIG_CACHE` (its tool cache, keyed by workdir/config,
+   not by profile) on omac-mode runs; both spellings land in the sandbox
+   env and npm's scan order decides the winner. The export is the only
+   cache var in plain mode. See the README's "What a profile covers"
+   section for the full overlap write-up.
 8. No shipped skill for the MCP local→HTTP conversion: it would handle
    MCP tokens inside a model session (leak surface) and would need
    per-profile registration machinery. The recipe stays in the README;
@@ -123,8 +127,8 @@ these (`HomeEnv` in omac's harness descriptors).
 
 Symptom → cause:
 
-- `permission denied 127.0.0.1:49374` inside omac → local omac build
-  predates the hotfix; rebuild from the fix branch.
+- `permission denied 127.0.0.1:49374` inside omac → omac predates the
+  v2 service port pin (pre-v0.10.0); upgrade omac.
 - `bwrap: Can't create file at .../config/omac` → symlink regression,
   see decision 2.
 - `omac: unknown subcommand ...` from omac mode → arg routing; harness

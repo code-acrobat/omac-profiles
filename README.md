@@ -14,8 +14,8 @@ harness specifics are one table row each in `lib/profile.sh`.
 ln -s "$PWD/bin/omac_profile" ~/bin/omac_profile
 ```
 
-Requires GNU `realpath` and opencode v2. Sandboxed mode needs an omac
-built with the service-port hotfix (TNG/oh-my-agentic-coder#329).
+Requires GNU `realpath`, opencode v2, and omac ≥ v0.10.0. Older omac
+versions cannot run opencode v2 inside the sandbox.
 
 ## Usage
 
@@ -111,6 +111,75 @@ Contents of a profile, for `work` at `~/.opencode/profiles/work/`:
 | `state/opencode/` | service registration |
 | `state/omac/audit/audit.jsonl` | omac audit trail for this profile |
 
+## What a profile covers (and what it does not)
+
+The concerns a profile exists for:
+
+1. **Credentials and accounts.** Each profile owns its `opencode.db`, so
+   provider logins (company vs personal) never share a database.
+2. **Blast radius.** Sessions, config, plugins, skills, approvals and the
+   audit trail all live under the profile root. After a suspicious
+   session, `cleanup` removes the exposure in one step.
+3. **Cache poisoning.** npm executes code from its cache (tarballs,
+   install scripts), so a cache the sandbox can write must never be the
+   one your host npm trusts. Each profile exports its own npm cache and
+   the host `~/.npm` stays ungranted.
+4. **Per-profile omac layer.** Approvals, skill registry and audit trail
+   branch off via `XDG_CONFIG_HOME`/`XDG_STATE_HOME`; one profile's
+   grants never satisfy another's.
+5. **Service isolation.** Plain mode's `--standalone` gives every run a
+   private server; profiles never touch the shared host service.
+
+### Overlap with omac's own cache layer (omac ≥ 0.10.0)
+
+omac has its own tool-cache layer that overlaps with concern 3 for
+sessions that run through the sandbox:
+
+- omac points `NPM_CONFIG_CACHE`, `GOCACHE`, `GOMODCACHE`,
+  `PIP_CACHE_DIR`, `CARGO_HOME` and `XDG_CACHE_HOME` at one directory per
+  scope under `~/.cache/omac/`. The scope is chosen with
+  `--cache-scope global|config|workdir` (default `global`), made fresh
+  per launch with `--ephemeral-cache`, and deleted with
+  `omac cache clear`.
+- Inside an omac-mode session the host `~/.npm` is not used at all: the
+  injected `NPM_CONFIG_CACHE` points into omac's tool-cache directory.
+
+What omac's cache layer does **not** do:
+
+- It is keyed by **workdir or config file, not by profile**. Two profiles
+  working in the same project share one cache scope (global by default),
+  so cross-profile cache isolation still needs this wrapper.
+- In omac mode the sandbox gets **both** cache variables:
+  `npm_config_cache` (this wrapper's per-profile export) and
+  `NPM_CONFIG_CACHE` (omac's tool cache). npm treats both spellings as
+  the same setting, so which one wins depends on npm's env scan order.
+  Check what a session actually uses with `npm config get cache`. Plain
+  mode has no omac layer, so the profile's export is the only one.
+- It covers caches only. Credentials, sessions, MCP server data,
+  approvals and audit trails are outside its reach; that is what
+  profiles are for.
+
+**If cache isolation is your only concern, profiles are not required:**
+plain (non-profile) omac with `--cache-scope workdir` gives one cache
+per project, and `--ephemeral-cache` gives a throwaway cache on every
+launch. Use profiles once different accounts, secrets, or a deletable
+blast radius enter the picture.
+
+### Stateful MCP servers on the host are shared
+
+A `remote` (HTTP) MCP server runs on the host and keeps its own data: a
+memory server's knowledge graph, for example. Every profile whose
+`opencode.json` points at the same URL **shares that data** — a company
+profile would see the personal profile's notes. Neither omac nor this
+wrapper can split one host process's data directory per profile.
+
+- Accept the sharing on purpose (fine for stateless lookups like
+  context7), or
+- Run one instance per profile: its own data dir, its own loopback port,
+  that port in `network.open_port` in the machine-global sandbox grants
+  (`~/.config/omac/sandbox-profiles/default.json`), and the per-profile
+  URL in the profile's config.
+
 ## Tuning config (MCP, plugins, model)
 
 Edit the profile's `config/opencode/opencode.json`. It uses the same
@@ -159,7 +228,9 @@ and let the profile talk to its loopback URL:
 Each profile exports its own npm cache
 (`npm_config_cache=<profile>/data/npm-cache`), so npm-family tooling in
 the sandbox never touches the host's `~/.npm`: a shared cache can be
-poisoned, and the profile-local one is thrown away with `cleanup`.
+poisoned, and the profile-local one is thrown away with `cleanup`. In
+omac mode the omac tool-cache layer may add its own `NPM_CONFIG_CACHE`
+on top; see "What a profile covers" above for the interaction.
 
 There is deliberately no install skill for the local→HTTP MCP
 conversion: it would handle your MCP tokens inside a model session
@@ -196,5 +267,5 @@ Known rough edges (opencode v2.0.18):
 
 ## About
 
-Architecture, the omac hotfix integration and debugging live in
+Architecture, integration details and debugging live in
 [AGENTS.md](./AGENTS.md).
