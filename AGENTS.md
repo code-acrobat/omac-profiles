@@ -37,12 +37,11 @@ omac_profile <harness> <name> <plain|omac|cleanup|sync> [--] [args...]
   kills processes.
 - `sync` seeds a profile from the host: the host opencode config dir
   (`${XDG_CONFIG_HOME:-~/.config}/opencode`) into
-  `<profile>/config/opencode/` (minus `service.json`) and `~/.npm` into
-  `<profile>/data/npm-cache/`, no-overwrite copies (`rsync` when
-  available, `cp -n` fallback) so profile files win and
-  re-running only fills gaps. Runs before `profile_use` (it must read
-  host paths). The omac layer is never seeded. claude: not implemented
-  (clear error; extension point in `profile_sync`).
+  `<profile>/config/opencode/` (minus `service.json`), no-overwrite
+  copies (`rsync` when available, `cp -n` fallback) so profile files win
+  and re-running only fills gaps. Runs before `profile_use` (it must
+  read host paths). The omac layer is never seeded. claude: not
+  implemented (clear error; extension point in `profile_sync`).
 
 ## How the opencode v2 service port is handled
 
@@ -66,7 +65,7 @@ will follow as one table row each. Everything harness-specific lives in
 
 | harness     | root                         | env exports (`profile_use`)            | plain prelude    |
 |-------------|------------------------------|----------------------------------------|------------------|
-| opencode    | `~/.opencode/profiles/<n>`   | XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STATE_HOME, npm_config_cache | `--standalone` |
+| opencode    | `~/.opencode/profiles/<n>`   | XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_STATE_HOME               | `--standalone` |
 | claude-code | `~/.claude-profiles/<n>`     | CLAUDE_CONFIG_DIR                      | (none)           |
 
 Adding a harness = one row each in `profile_harness` (alias
@@ -103,24 +102,18 @@ these (`HomeEnv` in omac's harness descriptors).
    `<profile>/state/omac/audit/audit.jsonl` instead of the central
    `~/.local/state/omac/audit/`. Per-profile trails are intentional under
    branch-off; know where to look when reviewing.
-6. `XDG_CACHE_HOME` is not redirected: general caches are not secret and
-   sharing avoids re-downloads. The npm cache is the exception, see 7.
-   pip/Go/cargo caches follow the same no-redirect rule: omac's sandbox
-   tool cache already keeps them out of the host, and plain mode has no
-   security boundary to protect. Extension point for cache isolation
-   and for opencode.json/plugin/MCP seeding: `profile_ensure()` in
+6. Caches are not branched by the wrapper; tool caches are omac core's
+   job, see 7. `XDG_CACHE_HOME` stays shared on purpose: general caches
+   are not secret and sharing avoids re-downloads. Extension point for
+   opencode.json/plugin/MCP seeding: `profile_ensure()` in
    `lib/profile.sh`.
-7. Per-profile npm cache: `profile_use` exports
-   `npm_config_cache=<profile>/data/npm-cache`, forwarded into the
-   sandbox by the machine policy's `npm_config_*` allowlist entry. npm
-   tarballs get executed, so a shared cache is a poisoning vector; the
-   host `~/.npm` is deliberately not granted at all. Trade-off: each
-   profile downloads its packages once. Note: omac ≥ 0.10.0 additionally
-   injects `NPM_CONFIG_CACHE` (its tool cache, keyed by workdir/config,
-   not by profile) on omac-mode runs; both spellings land in the sandbox
-   env and npm's scan order decides the winner. The export is the only
-   cache var in plain mode. See the README's "What a profile covers"
-   section for the full overlap write-up.
+7. Tool caches (npm, Go, pip, cargo, XDG) belong to omac, one source of
+   truth: omac injects every cache variable on omac-mode runs, scoped by
+   `--cache-scope global|config|workdir` or thrown away per launch with
+   `--ephemeral-cache` (README, "Caches"). The wrapper must not export
+   cache variables of its own: it would duplicate a dozen env spellings
+   that omac already owns and shadow omac's injection inside the
+   sandbox.
 8. No shipped skill for the MCP local→HTTP conversion: it would handle
    MCP tokens inside a model session (leak surface) and would need
    per-profile registration machinery. The recipe stays in the README;

@@ -63,9 +63,6 @@ omac_profile opencode work sync
   `<profile>/config/opencode/`: `opencode.json`, `auth.json`, plugins,
   themes. `service.json` is left out so the profile never points at the
   host's service.
-- your host npm cache (`~/.npm/`) into `<profile>/data/npm-cache/`: a
-  warm copy that is the profile's own: the sandbox may poison it, and
-  `cleanup` throws it away.
 
 omac's own layer (approvals, registry) is not copied: every profile
 approves for itself and gets the built-in skills on its first run.
@@ -90,7 +87,7 @@ is nothing to remove and exits 0.
 
 | harness  | root                       | branched by                                          |
 |----------|----------------------------|------------------------------------------------------|
-| opencode | `~/.opencode/profiles/<n>` | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, `npm_config_cache` |
+| opencode | `~/.opencode/profiles/<n>` | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` |
 
 The opencode root sits under `~/.opencode/` on purpose: omac grants that
 prefix to the opencode sandbox, so profile dirs are sandbox-visible
@@ -107,7 +104,6 @@ Contents of a profile, for `work` at `~/.opencode/profiles/work/`:
 | `config/omac/` | omac registry + approvals for this profile |
 | `data/opencode/opencode.db` | sessions and provider credentials (`opencode auth login` lands here) |
 | `data/opencode/log/` | opencode logs |
-| `data/npm-cache/` | npm cache (exported as `npm_config_cache`, seeded by `sync`) |
 | `state/opencode/` | service registration |
 | `state/omac/audit/audit.jsonl` | omac audit trail for this profile |
 
@@ -120,57 +116,11 @@ The concerns a profile exists for:
 2. **Blast radius.** Sessions, config, plugins, skills, approvals and the
    audit trail all live under the profile root. After a suspicious
    session, `cleanup` removes the exposure in one step.
-3. **Cache poisoning.** npm executes code from its cache (tarballs,
-   install scripts), so a cache the sandbox can write must never be the
-   one your host npm trusts. Each profile exports its own npm cache and
-   the host `~/.npm` stays ungranted.
-4. **Per-profile omac layer.** Approvals, skill registry and audit trail
+3. **Per-profile omac layer.** Approvals, skill registry and audit trail
    branch off via `XDG_CONFIG_HOME`/`XDG_STATE_HOME`; one profile's
    grants never satisfy another's.
-5. **Service isolation.** Plain mode's `--standalone` gives every run a
+4. **Service isolation.** Plain mode's `--standalone` gives every run a
    private server; profiles never touch the shared host service.
-
-### Overlap with omac's own cache layer (omac ≥ 0.10.0)
-
-omac has its own tool-cache layer that overlaps with concern 3 for
-sessions that run through the sandbox:
-
-- omac points `NPM_CONFIG_CACHE`, `GOCACHE`, `GOMODCACHE`,
-  `PIP_CACHE_DIR`, `CARGO_HOME` and `XDG_CACHE_HOME` at one directory per
-  scope under `~/.cache/omac/`. The scope is chosen with
-  `--cache-scope global|config|workdir` (default `global`), made fresh
-  per launch with `--ephemeral-cache`, and deleted with
-  `omac cache clear`.
-- Inside an omac-mode session the host `~/.npm` is not used at all: the
-  injected `NPM_CONFIG_CACHE` points into omac's tool-cache directory.
-
-What omac's cache layer does **not** do:
-
-- It is keyed by **workdir or config file, not by profile**. Two profiles
-  working in the same project share one cache scope (global by default),
-  so cross-profile cache isolation still needs this wrapper.
-- In omac mode the sandbox gets **both** cache variables:
-  `npm_config_cache` (this wrapper's per-profile export) and
-  `NPM_CONFIG_CACHE` (omac's tool cache). npm treats both spellings as
-  the same setting, so which one wins depends on npm's env scan order.
-  Check what a session actually uses with `npm config get cache`. Plain
-  mode has no omac layer, so the profile's export is the only one.
-- It covers caches only. Credentials, sessions, MCP server data,
-  approvals and audit trails are outside its reach; that is what
-  profiles are for.
-
-**If cache isolation is your only concern, profiles are not required:**
-plain (non-profile) omac with `--cache-scope workdir` gives one cache
-per project, and `--ephemeral-cache` gives a throwaway cache on every
-launch. Use profiles once different accounts, secrets, or a deletable
-blast radius enter the picture.
-
-Other toolchain caches (pip, Go, cargo) are deliberately not branched
-per profile. omac already keeps them out of the host inside the
-sandbox, and in plain mode the agent has full host access anyway, so a
-per-profile cache there is hygiene rather than a security boundary.
-npm alone is branched because install scripts and `npx` execute cached
-code by design.
 
 ### Stateful MCP servers on the host are shared
 
@@ -186,6 +136,48 @@ wrapper can split one host process's data directory per profile.
   that port in `network.open_port` in the machine-global sandbox grants
   (`~/.config/omac/sandbox-profiles/default.json`), and the per-profile
   URL in the profile's config.
+
+## Caches
+
+Tool caches (npm, Go, pip, cargo, XDG) are deliberately not part of a
+profile. omac owns them as the single source of truth: a wrapper would
+have to track every cache variable of every toolchain, always one tool
+release behind omac, and would shadow the variables omac injects.
+
+What omac does:
+
+- Every omac-mode run points `NPM_CONFIG_CACHE`, `GOCACHE`,
+  `GOMODCACHE`, `PIP_CACHE_DIR`, `CARGO_HOME` and `XDG_CACHE_HOME` at
+  one directory per cache scope under `~/.cache/omac/`; the host's own
+  caches are never written from the sandbox.
+- The scope decides who shares a cache: `--cache-scope global`,
+  `config` (per launcher-config file) or `workdir` (per project).
+  `--ephemeral-cache` makes it throwaway per launch,
+  `omac cache clear` drops the active scope.
+
+Example: work and personal sessions using separate npm caches, from
+plain omac, no cache handling in the wrapper:
+
+```sh
+# work: every session in this repo shares one npm cache
+cd ~/work/repo && omac start opencode --cache-scope workdir
+
+# personal: this project gets its own cache, separate from work's
+cd ~/proj/photo-tool && omac start opencode --cache-scope workdir
+```
+
+To keep the scope without the flag, set it per project in
+`<project>/.opencode/oh-my-agentic-coder.yaml`:
+
+```yaml
+cache:
+  scope: workdir
+```
+
+If cache separation is your only concern, this is all you need;
+profiles add the credential and blast-radius layer on top. Note that
+plain mode (no sandbox) runs with your host environment as-is, so
+omac's cache redirects do not apply there.
 
 ## Tuning config (MCP, plugins, model)
 
@@ -231,13 +223,6 @@ and let the profile talk to its loopback URL:
 3. Sandbox policy (`~/.config/omac/sandbox-profiles/default.json`,
    machine-global): add the port to `network.open_port`. Ad-hoc connects
    can also be approved through the network prompt.
-
-Each profile exports its own npm cache
-(`npm_config_cache=<profile>/data/npm-cache`), so npm-family tooling in
-the sandbox never touches the host's `~/.npm`: a shared cache can be
-poisoned, and the profile-local one is thrown away with `cleanup`. In
-omac mode the omac tool-cache layer may add its own `NPM_CONFIG_CACHE`
-on top; see "What a profile covers" above for the interaction.
 
 There is deliberately no install skill for the local→HTTP MCP
 conversion: it would handle your MCP tokens inside a model session

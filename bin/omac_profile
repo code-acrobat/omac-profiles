@@ -15,7 +15,7 @@ usage: omac_profile <harness> <name> <plain|omac|cleanup|sync> [--] [args...]
   plain      run the harness directly, no sandbox
   omac       run through the omac sandbox
   cleanup    delete the profile: remove its whole directory
-  sync       seed the profile from the host (config, plugins, npm cache)
+  sync       seed the profile from the host (config, plugins)
 
 After --, args go to the harness (plain and omac mode). In omac mode a
 leading non-dash word is an omac subcommand instead (continue, resume, ...).

@@ -44,7 +44,6 @@ profile_use() {
       export XDG_CONFIG_HOME="$root/config" # opencode config + omac registry/approvals
       export XDG_DATA_HOME="$root/data"     # opencode.db: sessions, provider credentials
       export XDG_STATE_HOME="$root/state"   # service registration, locks, audit trail
-      export npm_config_cache="$root/data/npm-cache" # sandbox-writable; keeps host cache untouched
       ;;
     claude-code)
       export CLAUDE_CONFIG_DIR="$root/config" # claude config, credentials, sessions
@@ -85,14 +84,6 @@ profile_sync() {
         echo "omac_profile: seeded config from $host_cfg (service.json left out)"
       else
         echo "omac_profile: no host config at $host_cfg, nothing seeded"
-      fi
-      local host_npm="${npm_config_cache:-$HOME/.npm}"
-      if [ -d "$host_npm" ]; then
-        mkdir -p "$root/data/npm-cache"
-        "${copy[@]}" "$host_npm/." "$root/data/npm-cache/" 2> >(grep -vF "behavior of -n is non-portable" >&2)
-        echo "omac_profile: seeded npm cache from $host_npm ($(du -sh "$root/data/npm-cache" | cut -f1) total)"
-      else
-        echo "omac_profile: no host npm cache at $host_npm, nothing seeded"
       fi
       ;;
     *)
