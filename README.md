@@ -165,6 +165,13 @@ per project, and `--ephemeral-cache` gives a throwaway cache on every
 launch. Use profiles once different accounts, secrets, or a deletable
 blast radius enter the picture.
 
+Other toolchain caches (pip, Go, cargo) are deliberately not branched
+per profile. omac already keeps them out of the host inside the
+sandbox, and in plain mode the agent has full host access anyway, so a
+per-profile cache there is hygiene rather than a security boundary.
+npm alone is branched because install scripts and `npx` execute cached
+code by design.
+
 ### Stateful MCP servers on the host are shared
 
 A `remote` (HTTP) MCP server runs on the host and keeps its own data: a

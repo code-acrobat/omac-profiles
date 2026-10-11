@@ -105,8 +105,11 @@ these (`HomeEnv` in omac's harness descriptors).
    branch-off; know where to look when reviewing.
 6. `XDG_CACHE_HOME` is not redirected: general caches are not secret and
    sharing avoids re-downloads. The npm cache is the exception, see 7.
-   Extension point for cache isolation and for opencode.json/plugin/MCP
-   seeding: `profile_ensure()` in `lib/profile.sh`.
+   pip/Go/cargo caches follow the same no-redirect rule: omac's sandbox
+   tool cache already keeps them out of the host, and plain mode has no
+   security boundary to protect. Extension point for cache isolation
+   and for opencode.json/plugin/MCP seeding: `profile_ensure()` in
+   `lib/profile.sh`.
 7. Per-profile npm cache: `profile_use` exports
    `npm_config_cache=<profile>/data/npm-cache`, forwarded into the
    sandbox by the machine policy's `npm_config_*` allowlist entry. npm
